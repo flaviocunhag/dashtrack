@@ -7,7 +7,7 @@
 :root{--bg:#0b0b0c;--card:#232324;--text:#f5f5f7;--muted:#a6a6aa;--accent:#ff4b43;--green:#18c964;--line:#3a3a3c}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
 .app{max-width:760px;margin:auto;padding:20px 15px 100px}header{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:20px}
-h1{font-size:31px;margin:0}h2{font-size:21px;margin:0}.muted{color:var(--muted)}button,input,textarea{font:inherit}
+h1{font-size:31px;margin:0}h2{font-size:21px;margin:0}.muted{color:var(--muted)}button,input,textarea,select{font:inherit}
 .btn{border:0;border-radius:14px;padding:12px 16px;background:var(--accent);color:white;font-weight:700}.secondary{background:#303033}.ghost{background:transparent;border:1px solid var(--line)}
 .card,.metric{background:var(--card);border:1px solid #343436;border-radius:17px;padding:17px;margin-bottom:13px}
 .goal{font-size:34px;font-weight:800;margin:5px 0 12px}.progress{height:11px;background:#454548;border-radius:99px;overflow:hidden}.progress div{height:100%;background:var(--accent)}
@@ -15,28 +15,27 @@ h1{font-size:31px;margin:0}h2{font-size:21px;margin:0}.muted{color:var(--muted)}
 .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.metric{margin:0;min-height:105px}.label{color:var(--muted);font-size:15px}.value{font-size:27px;font-weight:800;margin-top:8px}.sub{color:var(--muted);margin-top:5px}
 .shift{display:flex;justify-content:space-between;gap:10px}.date{font-weight:800}.meta{color:var(--muted);margin-top:5px}.net{color:var(--green);font-weight:800;white-space:nowrap}
 .form{margin-top:10px}.field{margin-bottom:13px}.field label{display:block;color:var(--muted);font-size:14px;margin-bottom:6px}
-input,textarea{width:100%;background:#171718;color:var(--text);border:1px solid var(--line);border-radius:11px;padding:11px}.row{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+input,textarea,select{width:100%;background:#171718;color:var(--text);border:1px solid var(--line);border-radius:11px;padding:11px}.row{display:grid;grid-template-columns:1fr 1fr;gap:11px}
 .tabs{position:fixed;z-index:10;bottom:12px;left:50%;transform:translateX(-50%);width:min(96%,500px);display:flex;background:#252527;border:1px solid #404043;border-radius:25px;padding:5px;box-shadow:0 8px 28px #0008}
 .tab{flex:1;background:none;border:0;color:#aaa;padding:9px 5px;border-radius:20px;font-weight:700}.tab.active{background:#67312e;color:#ff655e}.hidden{display:none!important}
-@media(max-width:520px){.grid,.row{grid-template-columns:1fr}.app{padding-left:13px;padding-right:13px}h1{font-size:29px}}
+.auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}.auth .box{width:min(100%,440px)}.auth h1{margin-bottom:7px}.auth .card{margin-top:20px}.status{font-size:13px;color:var(--muted);margin-top:8px}.syncdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px}.syncdot.off{background:#777}.top-actions{display:flex;align-items:center;gap:8px}.small{font-size:12px}
+@media(max-width:520px){.grid,.row{grid-template-columns:1fr}.app{padding-left:13px;padding-right:13px}h1{font-size:29px}.top-actions{flex-wrap:wrap;justify-content:flex-end}}
 </style></head><body><main id="app" class="app"></main>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+const SUPABASE_URL="https://aqdyrfjxfobuaclrxmbh.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY="sb_publishable_5opZmIjwI1cLwplsZlIzRQ_1zOJobXJ";
+const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
 const K="dashtrack_local_v1";
-const DEFAULT={settings:{target:2660,fuel:1.87,eff:13},shifts:[]};
+const DEFAULT={settings:{target:2660,fuel:1.87,eff:13},shifts:[],pendingUpserts:[],pendingDeletes:[]};
 function loadState(){
   const keys=[K,"dashtrack_local_v0","dashtrack_v1","dashtrack"];
-  for(const k of keys){
-    try{
-      const raw=localStorage.getItem(k);
-      if(!raw) continue;
-      const x=JSON.parse(raw);
-      if(x && x.settings && Array.isArray(x.shifts)) return x;
-    }catch(e){}
-  }
+  for(const k of keys){try{const raw=localStorage.getItem(k);if(!raw)continue;const x=JSON.parse(raw);if(x&&x.settings&&Array.isArray(x.shifts))return x}catch(e){}}
   return JSON.parse(JSON.stringify(DEFAULT));
 }
-let S=loadState(), page="dash",edit=null,selectedMonth=new Date().toISOString().slice(0,7);
-const $=id=>document.getElementById(id), save=()=>localStorage.setItem(K,JSON.stringify(S));
+let S=loadState(),page="dash",edit=null,selectedMonth=new Date().toISOString().slice(0,7),user=null,syncing=false;
+S.pendingUpserts=Array.isArray(S.pendingUpserts)?S.pendingUpserts:[];S.pendingDeletes=Array.isArray(S.pendingDeletes)?S.pendingDeletes:[];
+const $=id=>document.getElementById(id),save=()=>localStorage.setItem(K,JSON.stringify(S));
 const money=x=>"$"+(+x||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2});
 const dur=m=>Math.floor((+m||0)/60)+"h "+String((+m||0)%60).padStart(2,"0")+"m";
 const fuel=s=>(+s.km||0)/(+S.settings.eff||1)*(+S.settings.fuel||0);
@@ -46,70 +45,72 @@ const monthLabel=m=>new Date(m+"-01T12:00").toLocaleDateString("en-CA",{month:"l
 const localMonth=()=>{let d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")};
 selectedMonth=localMonth();
 const monthList=()=>Array.from(new Set([localMonth(),...S.shifts.map(s=>s.date?.slice(0,7)).filter(Boolean)])).sort().reverse();
+function uuid(){return crypto.randomUUID()}
+function normalizeIds(){let changed=false;for(const s of S.shifts){if(!s.id||typeof s.id!=="string"||!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s.id)){s.id=uuid();S.pendingUpserts=[...new Set([...S.pendingUpserts,s.id])];changed=true}}if(changed)save();}
+normalizeIds();
+function queueUpsert(id){S.pendingUpserts=[...new Set([...S.pendingUpserts,id])];S.pendingDeletes=S.pendingDeletes.filter(x=>x!==id)}
+function queueDelete(id){S.pendingDeletes=[...new Set([...S.pendingDeletes,id])];S.pendingUpserts=S.pendingUpserts.filter(x=>x!==id)}
+function dbShift(s){return{id:s.id,user_id:user.id,shift_date:s.date,gross_earnings:+s.gross||0,deliveries:+s.del||0,dash_time_minutes:+s.dash||0,active_time_minutes:+s.active||0,distance_km:+s.km||0,observation:s.note||null}}
+function localShift(r){return{id:r.id,date:r.shift_date,gross:+r.gross_earnings||0,del:+r.deliveries||0,dash:+r.dash_time_minutes||0,active:+r.active_time_minutes||0,km:+r.distance_km||0,note:r.observation||""}}
+async function syncOneShift(id){if(!user)return;const s=S.shifts.find(x=>x.id===id);if(!s)return;const {error}=await sb.from("shifts").upsert(dbShift(s),{onConflict:"id"});if(!error){S.pendingUpserts=S.pendingUpserts.filter(x=>x!==id);save()}else{console.warn(error)}}
+async function syncOneDelete(id){if(!user)return;const {error}=await sb.from("shifts").delete().eq("id",id).eq("user_id",user.id);if(!error){S.pendingDeletes=S.pendingDeletes.filter(x=>x!==id);save()}else{console.warn(error)}}
+async function syncCloud(showAlert=false){
+  if(!user||syncing)return;
+  syncing=true;render();
+  try{
+    normalizeIds();
+    for(const id of [...S.pendingDeletes])await syncOneDelete(id);
+    for(const id of [...S.pendingUpserts])await syncOneShift(id);
+    const {data:cloud,error}=await sb.from("shifts").select("id,shift_date,gross_earnings,deliveries,dash_time_minutes,active_time_minutes,distance_km,observation").eq("user_id",user.id);
+    if(error)throw error;
+    const localById=new Map(S.shifts.map(s=>[s.id,s]));
+    for(const r of (cloud||[])){if(!localById.has(r.id))S.shifts.push(localShift(r));}
+    const {data:settingsRow,error:se}=await sb.from("settings").select("monthly_target,gas_price,vehicle_efficiency").eq("user_id",user.id).maybeSingle();
+    if(se)throw se;
+    if(settingsRow){S.settings={target:+settingsRow.monthly_target,fuel:+settingsRow.gas_price,eff:+settingsRow.vehicle_efficiency};}
+    else{
+      const {error:ie}=await sb.from("settings").upsert({user_id:user.id,monthly_target:+S.settings.target||0,gas_price:+S.settings.fuel||0,vehicle_efficiency:+S.settings.eff||1},{onConflict:"user_id"});
+      if(ie)throw ie;
+    }
+    save();
+    if(showAlert)alert("Cloud sync completed.");
+  }catch(e){console.error(e);if(showAlert)alert("Sync could not complete. Your local data is still safe. Check your internet connection and try again.");}
+  finally{syncing=false;render()}
+}
 function shiftMonth(m){selectedMonth=m;page="dash";render()}
 function C(){let a=S.shifts.filter(s=>s.date?.slice(0,7)==month()),g=a.reduce((x,s)=>x+(+s.gross||0),0),d=a.reduce((x,s)=>x+(+s.del||0),0),dt=a.reduce((x,s)=>x+(+s.dash||0),0),at=a.reduce((x,s)=>x+(+s.active||0),0),km=a.reduce((x,s)=>x+(+s.km||0),0),f=a.reduce((x,s)=>x+fuel(s),0);return{a,g,d,dt,at,km,f,n:g-f,days:new Set(a.map(s=>s.date)).size}}
 function M(l,v,s=""){return`<div class=metric><div class=label>${l}</div><div class=value>${v}</div>${s?`<div class=sub>${s}</div>`:""}</div>`}
 function sec(t,id,body){return`<section class=section><div class=head onclick="tog('${id}')"><h2>${t}</h2><span class=chev>⌄</span></div><div id=${id} class=hidden>${body}</div></section>`}
 function tog(id){let e=$(id);e.classList.toggle("hidden");e.previousElementSibling.querySelector(".chev").textContent=e.classList.contains("hidden")?"⌄":"⌃"}
-function dash(){let c=C(),p=S.settings.target?Math.min(100,c.g/S.settings.target*100):0;
-let opts=monthList().map(m=>`<option value="${m}" ${m===selectedMonth?"selected":""}>${monthLabel(m)}</option>`).join("");
+function top(){return`<div class=top-actions><span class=small>${user?`<span class=syncdot></span>Cloud connected`:""}</span>${user?`<button class="btn ghost" onclick="syncCloud(true)">${syncing?"Syncing…":"Sync"}</button>`:""}</div>`}
+function dash(){let c=C(),p=S.settings.target?Math.min(100,c.g/S.settings.target*100):0;let opts=monthList().map(m=>`<option value="${m}" ${m===selectedMonth?"selected":""}>${monthLabel(m)}</option>`).join("");
 let snap=`<div class=grid>${M("Gross total",money(c.g),c.a.length+" shifts in selected month")}${M("Total estimated net",money(c.n),"After fuel cost")}</div>`;
 let perf=`<div class=grid>${M("Gross per delivery",money(c.d?c.g/c.d:0))}${M("Net per delivery",money(c.d?c.n/c.d:0))}${M("Gross per Dash Time hour",money(c.dt?c.g/(c.dt/60):0))}${M("Net per Dash Time hour",money(c.dt?c.n/(c.dt/60):0))}${M("Gross per Active Time hour",money(c.at?c.g/(c.at/60):0))}${M("Net per Active Time hour",money(c.at?c.n/(c.at/60):0))}${M("Net per km",money(c.km?c.n/c.km:0))}${M("Average km per delivery",(c.d?c.km/c.d:0).toFixed(2)+" km")}</div>`;
 let work=`<div class=grid>${M("Total deliveries",c.d)}${M("Total fuel cost",money(c.f))}${M("Average deliveries per Dash Time hour",(c.dt?c.d/(c.dt/60):0).toFixed(2))}${M("Days worked",c.days,"Distinct shift dates")}${M("Dash Time",dur(c.dt),c.a.length+" shifts")}${M("Active Time",dur(c.at),c.d+" deliveries")}${M("Distance",c.km+" km","From logged shifts")}</div>`;
-let recent=[...S.shifts].filter(s=>s.date?.slice(0,7)===selectedMonth).sort((a,b)=>b.date.localeCompare(a.date)||b.id-a.id).slice(0,6).map(s=>`<div class=card><div class=shift><div><div class=date>${new Date(s.date+"T12:00").toLocaleDateString("en-CA",{month:"short",day:"numeric",year:"numeric"})}</div><div class=meta>${money(s.gross)} gross · ${s.del} deliveries · ${dur(s.dash)} Dash</div></div><div class=net>${money(net(s))} net</div></div></div>`).join("");
-return`<header><h1>Dashboard</h1><button class=btn onclick="add()">＋ Add shift</button></header>
-<div class=card><div class=field style="margin:0"><label>Month</label><select id=monthSelect onchange="shiftMonth(this.value)" style="width:100%;background:#171718;color:var(--text);border:1px solid var(--line);border-radius:11px;padding:11px">${opts}</select></div></div>
-<div class=muted style="margin:5px 0 20px">Goal progress from shifts logged in the selected month.</div><button class="btn ghost" onclick="page='settings';render()">Adjust assumptions →</button>
-<div class=card style="margin-top:17px"><div class=muted>Monthly target</div><div class=goal>${money(S.settings.target)}</div><div class=muted>${p.toFixed(1)}% of target</div><div style="margin-top:20px">Gross earnings progress</div><div class=progress><div style="width:${p}%"></div></div><div class=remaining>${money(Math.max(0,S.settings.target-c.g))} remaining to goal</div></div>
-${sec("Monthly snapshot","snap",snap)}${sec("Performance rates","perf",perf)}${sec("Work summary","work",work)}
-<section class=section><div class=head><h2>Recent shifts</h2><button class="btn ghost" onclick="page='history';render()">View all</button></div>${recent||"<div class=muted>None yet.</div>"}</section>`}
-function form(){let s=edit?S.shifts.find(x=>x.id==edit):{date:new Date().toISOString().slice(0,10),gross:"",del:"",dash:"",active:"",km:"",note:""};return`<header><h1>${edit?"Edit shift":"Add shift"}</h1><button class="btn secondary" onclick="page='dash';edit=null;render()">Cancel</button></header><div class=card>
-<div class=field><label>Date</label><input id=date type=date value="${s.date||""}"></div><div class=row><div class=field><label>Gross earnings ($)</label><input id=gross type=number step=.01 value="${s.gross??""}"></div><div class=field><label>Deliveries</label><input id=del type=number min=0 value="${s.del??""}"></div></div>
-<div class=row>
-<div class=field><label>Dash Time — hours</label><input id=dashH type=number min=0 step=1 value="${Math.floor((+s.dash||0)/60)}"></div>
-<div class=field><label>Dash Time — minutes</label><input id=dashM type=number min=0 max=59 step=1 value="${(+s.dash||0)%60}"></div>
-</div>
-<div class=row>
-<div class=field><label>Active Time — hours</label><input id=activeH type=number min=0 step=1 value="${Math.floor((+s.active||0)/60)}"></div>
-<div class=field><label>Active Time — minutes</label><input id=activeM type=number min=0 max=59 step=1 value="${(+s.active||0)%60}"></div>
-</div>
-<div class=field><label>Distance (km)</label><input id=km type=number min=0 step=.1 value="${s.km??""}"></div><div class=field><label>Observation</label><textarea id=note rows=3>${s.note||""}</textarea></div><button class=btn onclick="saveShift()">Save shift</button></div>`}
-function history(){let a=[...S.shifts].sort((x,y)=>y.date.localeCompare(x.date)||y.id-x.id);return`<header><h1>Shift History</h1><button class=btn onclick="add()">＋ Add shift</button></header>${a.map(s=>`<div class=card><div class=shift><div><div class=date>${s.date}</div><div class=meta>${money(s.gross)} gross · ${s.del} deliveries · ${dur(s.dash)} Dash · ${s.km} km</div></div><div><div class=net>${money(net(s))}</div><button class="btn ghost" onclick="editShift(${s.id})">Edit</button> <button class="btn ghost" onclick="deleteShift(${s.id})">Delete</button></div></div></div>`).join("")||"<div class=muted>No shifts recorded.</div>"}`}
-function settings(){return`<header><h1>Settings</h1></header><div class=card><div class=field><label>Monthly target ($)</label><input id=target type=number step=.01 value="${S.settings.target}"></div><div class=field><label>Gas price ($/L)</label><input id=fuel type=number step=.01 value="${S.settings.fuel}"></div><div class=field><label>Vehicle efficiency (km/L)</label><input id=eff type=number step=.1 value="${S.settings.eff}"></div><button class=btn onclick="saveSet()">Save settings</button></div><div class=card><h3>Backup</h3><p class=muted>Export a JSON backup before changing devices or clearing browser data.</p><button class="btn secondary" onclick="backup()">Export backup</button> <button class="btn ghost" onclick="$('file').click()">Import backup</button><input id=file class=hidden type=file accept=application/json onchange=restore(event)></div>`}
-function render(){let b=page=="dash"?dash():page=="history"?history():page=="settings"?settings():form();document.querySelector("#app").innerHTML=b+`<nav class=tabs><button class="tab ${page=="dash"?"active":""}" onclick="page='dash';render()">▦<br>Dashboard</button><button class="tab ${page=="history"?"active":""}" onclick="page='history';render()">◷<br>Shift History</button><button class="tab ${page=="settings"?"active":""}" onclick="page='settings';render()">⚙<br>Settings</button></nav>`}
-function add(){edit=null;page="form";render()}
+let recent=[...S.shifts].filter(s=>s.date?.slice(0,7)===selectedMonth).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6).map(s=>`<div class=card><div class=shift><div><div class=date>${new Date(s.date+"T12:00").toLocaleDateString("en-CA",{month:"short",day:"numeric",year:"numeric"})}</div><div class=meta>${money(s.gross)} gross · ${s.del} deliveries · ${dur(s.dash)} Dash</div></div><div class=net>${money(net(s))} net</div></div></div>`).join("");
+return`<header><h1>Dashboard</h1>${top()}</header><div class=card><div class=field style="margin:0"><label>Month</label><select id=monthSelect onchange="shiftMonth(this.value)">${opts}</select></div></div><div class=muted style="margin:5px 0 20px">Goal progress from shifts logged in the selected month.</div><button class="btn ghost" onclick="page='settings';render()">Adjust assumptions →</button><div class=card style="margin-top:17px"><div class=muted>Monthly target</div><div class=goal>${money(S.settings.target)}</div><div class=muted>${p.toFixed(1)}% of target</div><div style="margin-top:20px">Gross earnings progress</div><div class=progress><div style="width:${p}%"></div></div><div class=remaining>${money(Math.max(0,S.settings.target-c.g))} remaining to goal</div></div>${sec("Monthly snapshot","snap",snap)}${sec("Performance rates","perf",perf)}${sec("Work summary","work",work)}<section class=section><div class=head><h2>Recent shifts</h2><button class="btn ghost" onclick="page='history';render()">View all</button></div>${recent||"<div class=muted>None yet.</div>"}</section>`}
+function form(){let s=edit?S.shifts.find(x=>x.id==edit):{date:new Date().toISOString().slice(0,10),gross:"",del:"",dash:"",active:"",km:"",note:""};return`<header><h1>${edit?"Edit shift":"Add shift"}</h1><button class="btn secondary" onclick="page='dash';edit=null;render()">Cancel</button></header><div class=card><div class=field><label>Date</label><input id=date type=date value="${s.date||""}"></div><div class=row><div class=field><label>Gross earnings ($)</label><input id=gross type=number step=.01 value="${s.gross??""}"></div><div class=field><label>Deliveries</label><input id=del type=number min=0 value="${s.del??""}"></div></div><div class=row><div class=field><label>Dash Time — hours</label><input id=dashH type=number min=0 step=1 value="${Math.floor((+s.dash||0)/60)}"></div><div class=field><label>Dash Time — minutes</label><input id=dashM type=number min=0 max=59 step=1 value="${(+s.dash||0)%60}"></div></div><div class=row><div class=field><label>Active Time — hours</label><input id=activeH type=number min=0 step=1 value="${Math.floor((+s.active||0)/60)}"></div><div class=field><label>Active Time — minutes</label><input id=activeM type=number min=0 max=59 step=1 value="${(+s.active||0)%60}"></div></div><div class=field><label>Distance (km)</label><input id=km type=number min=0 step=.1 value="${s.km??""}"></div><div class=field><label>Observation</label><textarea id=note rows=3>${s.note||""}</textarea></div><button class=btn onclick="saveShift()">Save shift</button></div>`}
+function history(){let a=[...S.shifts].sort((x,y)=>y.date.localeCompare(x.date));return`<header><h1>Shift History</h1><button class=btn onclick="add()">＋ Add shift</button></header>${a.map(s=>`<div class=card><div class=shift><div><div class=date>${s.date}</div><div class=meta>${money(s.gross)} gross · ${s.del} deliveries · ${dur(s.dash)} Dash · ${s.km} km</div></div><div><div class=net>${money(net(s))}</div><button class="btn ghost" onclick="editShift('${s.id}')">Edit</button> <button class="btn ghost" onclick="deleteShift('${s.id}')">Delete</button></div></div></div>`).join("")||"<div class=muted>No shifts recorded.</div>"}`}
+function settings(){let account=user?`<div class=\"muted\" style=\"margin-bottom:14px\">Signed in as <b>${user.email||''}</b></div>`:'';let cloud=user?`<button class=\"btn ghost\" onclick=\"syncCloud(true)\">${syncing?'Syncing…':'Sync now'}</button> <button class=\"btn secondary\" onclick=\"logout()\">Sign out</button>`:`<button class=\"btn\" onclick=\"page='auth';render()\">Sign in / Create account</button>`;let cloudText=user?'Your shifts are linked to your account and can be used on other devices.':'Sign in to sync the same DashTrack data between your PC and iPhone.';return`<header><h1>Settings</h1>${top()}</header><div class=card>${account}<div class=field><label>Monthly target ($)</label><input id=target type=number step=.01 value=\"${S.settings.target}\"></div><div class=field><label>Gas price ($/L)</label><input id=fuel type=number step=.01 value=\"${S.settings.fuel}\"></div><div class=field><label>Vehicle efficiency (km/L)</label><input id=eff type=number step=.1 value=\"${S.settings.eff}\"></div><button class=btn onclick=\"saveSet()\">Save settings</button></div><div class=card><h3>Cloud sync</h3><p class=muted>${cloudText}</p>${cloud}</div><div class=card><h3>Backup</h3><p class=muted>Export a JSON backup before changing devices or clearing browser data.</p><button class=\"btn secondary\" onclick=\"backup()\">Export backup</button> <button class=\"btn ghost\" onclick=\"$('file').click()\">Import backup</button><input id=file class=hidden type=file accept=application/json onchange=\"restore(event)\"></div>`}
+function auth(){return`<div class=auth><div class=box><h1>DashTrack</h1><div class=muted>Personal DoorDash earnings tracker</div><div class=card><div class=field><label>Email</label><input id=authEmail type=email autocomplete=email placeholder="you@example.com"></div><div class=field><label>Password</label><input id=authPassword type=password autocomplete=current-password placeholder="At least 6 characters"></div><button class=btn onclick="signIn()" style="width:100%">Sign in</button><button class="btn secondary" onclick="signUp()" style="width:100%;margin-top:10px">Create account</button><div id=authStatus class=status></div></div><button class="btn ghost" onclick="page='dash';render()">Continue without account</button></div></div>`}
+function render(){if(page==="auth"){document.querySelector("#app").innerHTML=auth();return}let b=page==="dash"?dash():page==="history"?history():page==="settings"?settings():form();document.querySelector("#app").innerHTML=b+`<nav class=tabs><button class="tab ${page==="dash"?"active":""}" onclick="page='dash';render()">▦<br>Dashboard</button><button class="tab ${page==="history"?"active":""}" onclick="page='history';render()">◷<br>Shift History</button><button class="tab ${page==="settings"?"active":""}" onclick="page='settings';render()">⚙<br>Settings</button></nav>`}
+function add(){normalizeIds();edit=null;page="form";render()}
 function editShift(id){edit=id;page="form";render()}
-function deleteShift(id){if(!confirm("Delete this shift?"))return;S.shifts=S.shifts.filter(x=>x.id!=id);save();render()}
-function saveShift(){
-  const dh=Math.max(0,Math.floor(+$("dashH").value||0));
-  const dm=Math.min(59,Math.max(0,Math.floor(+$("dashM").value||0)));
-  const ah=Math.max(0,Math.floor(+$("activeH").value||0));
-  const am=Math.min(59,Math.max(0,Math.floor(+$("activeM").value||0)));
-  const date=$("date").value;
-  const gross=+$("gross").value;
-  const del=+$("del").value;
-  const km=+$("km").value;
-  const dash=dh*60+dm, active=ah*60+am;
-  if(!date)return alert("Enter a date.");
-  if(!Number.isFinite(gross)||gross<0)return alert("Gross earnings must be 0 or greater.");
-  if(!Number.isInteger(del)||del<0)return alert("Deliveries must be a whole number of 0 or greater.");
-  if(active>dash)return alert("Active Time cannot be greater than Dash Time.");
-  if(!Number.isFinite(km)||km<0)return alert("Distance must be 0 or greater.");
-  const s={id:edit||Date.now(),date,gross,del,dash,active,km,note:$("note").value.trim()};
-  if(edit){const i=S.shifts.findIndex(x=>x.id==edit);if(i>=0)S.shifts[i]=s;}
-  else S.shifts.push(s);
-  save();edit=null;page="dash";selectedMonth=date.slice(0,7);render();
+async function deleteShift(id){if(!confirm("Delete this shift?"))return;S.shifts=S.shifts.filter(x=>x.id!==id);queueDelete(id);save();render();await syncOneDelete(id);}
+async function saveShift(){
+  const dh=Math.max(0,Math.floor(+$('dashH').value||0)),dm=Math.min(59,Math.max(0,Math.floor(+$('dashM').value||0))),ah=Math.max(0,Math.floor(+$('activeH').value||0)),am=Math.min(59,Math.max(0,Math.floor(+$('activeM').value||0))),date=$('date').value,gross=+$('gross').value,del=+$('del').value,km=+$('km').value,dash=dh*60+dm,active=ah*60+am;
+  if(!date)return alert("Enter a date.");if(!Number.isFinite(gross)||gross<0)return alert("Gross earnings must be 0 or greater.");if(!Number.isInteger(del)||del<0)return alert("Deliveries must be a whole number of 0 or greater.");if(active>dash)return alert("Active Time cannot be greater than Dash Time.");if(!Number.isFinite(km)||km<0)return alert("Distance must be 0 or greater.");
+  const id=edit||uuid(),s={id,date,gross,del,dash,active,km,note:$('note').value.trim()};if(edit){const i=S.shifts.findIndex(x=>x.id===edit);if(i>=0)S.shifts[i]=s;}else S.shifts.push(s);queueUpsert(id);save();edit=null;page="dash";selectedMonth=date.slice(0,7);render();await syncOneShift(id);
 }
-function saveSet(){
-  const target=+$("target").value, fuelPrice=+$("fuel").value, eff=+$("eff").value;
-  if(!Number.isFinite(target)||target<0)return alert("Monthly target must be 0 or greater.");
-  if(!Number.isFinite(fuelPrice)||fuelPrice<0)return alert("Gas price must be 0 or greater.");
-  if(!Number.isFinite(eff)||eff<=0)return alert("Vehicle efficiency must be greater than 0.");
-  S.settings={target,fuel:fuelPrice,eff};save();render();
-}
+async function saveSet(){const target=+$('target').value,fuelPrice=+$('fuel').value,eff=+$('eff').value;if(!Number.isFinite(target)||target<0)return alert("Monthly target must be 0 or greater.");if(!Number.isFinite(fuelPrice)||fuelPrice<0)return alert("Gas price must be 0 or greater.");if(!Number.isFinite(eff)||eff<=0)return alert("Vehicle efficiency must be greater than 0.");S.settings={target,fuel:fuelPrice,eff};save();if(user){const {error}=await sb.from("settings").upsert({user_id:user.id,monthly_target:target,gas_price:fuelPrice,vehicle_efficiency:eff},{onConflict:"user_id"});if(error)alert("Settings saved locally, but cloud sync failed.");}render()}
 function backup(){let a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:"application/json"}));a.download="dashtrack-backup.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
-function restore(e){let file=e.target.files?.[0];if(!file)return;let r=new FileReader();r.onload=()=>{try{let x=JSON.parse(r.result);if(!x.settings||!Array.isArray(x.shifts))throw 0;S={settings:{target:+x.settings.target||0,fuel:+x.settings.fuel||0,eff:+x.settings.eff||1},shifts:x.shifts};save();selectedMonth=localMonth();render();alert("Backup restored successfully.")}catch(_){alert("Invalid backup")}};r.readAsText(file)}
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
+function restore(e){let file=e.target.files?.[0];if(!file)return;let r=new FileReader();r.onload=async()=>{try{let x=JSON.parse(r.result);if(!x.settings||!Array.isArray(x.shifts))throw 0;S={settings:{target:+x.settings.target||0,fuel:+x.settings.fuel||0,eff:+x.settings.eff||1},shifts:x.shifts,pendingUpserts:[],pendingDeletes:[]};normalizeIds();save();selectedMonth=localMonth();render();if(user)await syncCloud(false);alert("Backup restored successfully.")}catch(_){alert("Invalid backup")}};r.readAsText(file)}
+async function signIn(){const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||!password)return $('authStatus').textContent="Enter your email and password.";$('authStatus').textContent="Signing in…";const {error}=await sb.auth.signInWithPassword({email,password});if(error)$('authStatus').textContent=error.message}
+async function signUp(){const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||password.length<6)return $('authStatus').textContent="Enter an email and a password with at least 6 characters.";$('authStatus').textContent="Creating account…";const {data,error}=await sb.auth.signUp({email,password});if(error)return $('authStatus').textContent=error.message;if(data.session){user=data.user;page="dash";render();await syncCloud(false)}else $('authStatus').textContent="Account created. Check your email to confirm it, then sign in."}
+async function logout(){await sb.auth.signOut();user=null;render()}
+sb.auth.onAuthStateChange((event,session)=>{user=session?.user||null;if(user&&page==="auth")page="dash";render();if(user)setTimeout(()=>syncCloud(false),0)});
+sb.auth.getSession().then(({data})=>{user=data.session?.user||null;render();if(user)syncCloud(false);else render()}).catch(()=>render());
+if(!user)render();
+if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
 save();
-render();
 </script></body></html>
