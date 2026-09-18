@@ -25,7 +25,7 @@ input,textarea,select{width:100%;background:#171718;color:var(--text);border:1px
 <script>
 const SUPABASE_URL="https://aqdyrfjxfobuaclrxmbh.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY="sb_publishable_5opZmIjwI1cLwplsZlIzRQ_1zOJobXJ";
-const sb=window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+const sb=window.supabase ? window.supabase.createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY) : null;
 const K="dashtrack_local_v1";
 const DEFAULT={settings:{target:2660,fuel:1.87,eff:13},shifts:[],pendingUpserts:[],pendingDeletes:[]};
 function loadState(){
@@ -108,9 +108,22 @@ function restore(e){let file=e.target.files?.[0];if(!file)return;let r=new FileR
 async function signIn(){const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||!password)return $('authStatus').textContent="Enter your email and password.";$('authStatus').textContent="Signing in…";const {error}=await sb.auth.signInWithPassword({email,password});if(error)$('authStatus').textContent=error.message}
 async function signUp(){const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||password.length<6)return $('authStatus').textContent="Enter an email and a password with at least 6 characters.";$('authStatus').textContent="Creating account…";const {data,error}=await sb.auth.signUp({email,password});if(error)return $('authStatus').textContent=error.message;if(data.session){user=data.user;page="dash";render();await syncCloud(false)}else $('authStatus').textContent="Account created. Check your email to confirm it, then sign in."}
 async function logout(){await sb.auth.signOut();user=null;render()}
-sb.auth.onAuthStateChange((event,session)=>{user=session?.user||null;if(user&&page==="auth")page="dash";render();if(user)setTimeout(()=>syncCloud(false),0)});
-sb.auth.getSession().then(({data})=>{user=data.session?.user||null;render();if(user)syncCloud(false);else render()}).catch(()=>render());
-if(!user)render();
+if(sb){
+  sb.auth.onAuthStateChange((event,session)=>{
+    user=session?.user||null;
+    if(user&&page==="auth")page="dash";
+    render();
+    if(user)setTimeout(()=>syncCloud(false),0);
+  });
+
+  sb.auth.getSession().then(({data})=>{
+    user=data.session?.user||null;
+    render();
+    if(user)syncCloud(false);
+  }).catch(()=>render());
+}else{
+  render();
+}
 if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
 save();
 </script></body></html>
