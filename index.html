@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b0b0c"><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0b0b0c"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="manifest" href="./manifest.webmanifest">
 <title>DashTrack</title>
 <style>
 :root{--bg:#0b0b0c;--card:#232324;--text:#f5f5f7;--muted:#a6a6aa;--accent:#ff4b43;--green:#18c964;--line:#3a3a3c}
@@ -22,8 +22,20 @@ input,textarea{width:100%;background:#171718;color:var(--text);border:1px solid 
 </style></head><body><main id="app" class="app"></main>
 <script>
 const K="dashtrack_local_v1";
-let S=JSON.parse(localStorage.getItem(K)||'null')||{settings:{target:2660,fuel:1.87,eff:13},shifts:[]},
-page="dash",edit=null,selectedMonth=new Date().toISOString().slice(0,7);
+const DEFAULT={settings:{target:2660,fuel:1.87,eff:13},shifts:[]};
+function loadState(){
+  const keys=[K,"dashtrack_local_v0","dashtrack_v1","dashtrack"];
+  for(const k of keys){
+    try{
+      const raw=localStorage.getItem(k);
+      if(!raw) continue;
+      const x=JSON.parse(raw);
+      if(x && x.settings && Array.isArray(x.shifts)) return x;
+    }catch(e){}
+  }
+  return JSON.parse(JSON.stringify(DEFAULT));
+}
+let S=loadState(), page="dash",edit=null,selectedMonth=new Date().toISOString().slice(0,7);
 const $=id=>document.getElementById(id), save=()=>localStorage.setItem(K,JSON.stringify(S));
 const money=x=>"$"+(+x||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2});
 const dur=m=>Math.floor((+m||0)/60)+"h "+String((+m||0)%60).padStart(2,"0")+"m";
@@ -31,7 +43,9 @@ const fuel=s=>(+s.km||0)/(+S.settings.eff||1)*(+S.settings.fuel||0);
 const net=s=>(+s.gross||0)-fuel(s);
 const month=()=>selectedMonth;
 const monthLabel=m=>new Date(m+"-01T12:00").toLocaleDateString("en-CA",{month:"long",year:"numeric"});
-const monthList=()=>Array.from(new Set([new Date().toISOString().slice(0,7),...S.shifts.map(s=>s.date?.slice(0,7)).filter(Boolean)])).sort().reverse();
+const localMonth=()=>{let d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")};
+selectedMonth=localMonth();
+const monthList=()=>Array.from(new Set([localMonth(),...S.shifts.map(s=>s.date?.slice(0,7)).filter(Boolean)])).sort().reverse();
 function shiftMonth(m){selectedMonth=m;page="dash";render()}
 function C(){let a=S.shifts.filter(s=>s.date?.slice(0,7)==month()),g=a.reduce((x,s)=>x+(+s.gross||0),0),d=a.reduce((x,s)=>x+(+s.del||0),0),dt=a.reduce((x,s)=>x+(+s.dash||0),0),at=a.reduce((x,s)=>x+(+s.active||0),0),km=a.reduce((x,s)=>x+(+s.km||0),0),f=a.reduce((x,s)=>x+fuel(s),0);return{a,g,d,dt,at,km,f,n:g-f,days:new Set(a.map(s=>s.date)).size}}
 function M(l,v,s=""){return`<div class=metric><div class=label>${l}</div><div class=value>${v}</div>${s?`<div class=sub>${s}</div>`:""}</div>`}
@@ -66,9 +80,36 @@ function render(){let b=page=="dash"?dash():page=="history"?history():page=="set
 function add(){edit=null;page="form";render()}
 function editShift(id){edit=id;page="form";render()}
 function deleteShift(id){if(!confirm("Delete this shift?"))return;S.shifts=S.shifts.filter(x=>x.id!=id);save();render()}
-function saveShift(){let dh=Math.max(0,+$("dashH").value||0),dm=Math.min(59,Math.max(0,+$("dashM").value||0)),ah=Math.max(0,+$("activeH").value||0),am=Math.min(59,Math.max(0,+$("activeM").value||0));let s={id:edit||Date.now(),date:$("date").value,gross:+$("gross").value||0,del:+$("del").value||0,dash:dh*60+dm,active:ah*60+am,km:+$("km").value||0,note:$("note").value};if(!s.date)return alert("Enter a date.");if(edit)S.shifts[S.shifts.findIndex(x=>x.id==edit)]=s;else S.shifts.push(s);save();edit=null;page="dash";render()}
-function saveSet(){S.settings={target:+$("target").value||0,fuel:+$("fuel").value||0,eff:+$("eff").value||1};save();render()}
-function backup(){let a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:"application/json"}));a.download="dashtrack-backup.json";a.click()}
-function restore(e){let r=new FileReader();r.onload=()=>{try{let x=JSON.parse(r.result);if(!x.settings||!Array.isArray(x.shifts))throw 0;S=x;save();render()}catch(_){alert("Invalid backup")}};r.readAsText(e.target.files[0])}
+function saveShift(){
+  const dh=Math.max(0,Math.floor(+$("dashH").value||0));
+  const dm=Math.min(59,Math.max(0,Math.floor(+$("dashM").value||0)));
+  const ah=Math.max(0,Math.floor(+$("activeH").value||0));
+  const am=Math.min(59,Math.max(0,Math.floor(+$("activeM").value||0)));
+  const date=$("date").value;
+  const gross=+$("gross").value;
+  const del=+$("del").value;
+  const km=+$("km").value;
+  const dash=dh*60+dm, active=ah*60+am;
+  if(!date)return alert("Enter a date.");
+  if(!Number.isFinite(gross)||gross<0)return alert("Gross earnings must be 0 or greater.");
+  if(!Number.isInteger(del)||del<0)return alert("Deliveries must be a whole number of 0 or greater.");
+  if(active>dash)return alert("Active Time cannot be greater than Dash Time.");
+  if(!Number.isFinite(km)||km<0)return alert("Distance must be 0 or greater.");
+  const s={id:edit||Date.now(),date,gross,del,dash,active,km,note:$("note").value.trim()};
+  if(edit){const i=S.shifts.findIndex(x=>x.id==edit);if(i>=0)S.shifts[i]=s;}
+  else S.shifts.push(s);
+  save();edit=null;page="dash";selectedMonth=date.slice(0,7);render();
+}
+function saveSet(){
+  const target=+$("target").value, fuelPrice=+$("fuel").value, eff=+$("eff").value;
+  if(!Number.isFinite(target)||target<0)return alert("Monthly target must be 0 or greater.");
+  if(!Number.isFinite(fuelPrice)||fuelPrice<0)return alert("Gas price must be 0 or greater.");
+  if(!Number.isFinite(eff)||eff<=0)return alert("Vehicle efficiency must be greater than 0.");
+  S.settings={target,fuel:fuelPrice,eff};save();render();
+}
+function backup(){let a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:"application/json"}));a.download="dashtrack-backup.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+function restore(e){let file=e.target.files?.[0];if(!file)return;let r=new FileReader();r.onload=()=>{try{let x=JSON.parse(r.result);if(!x.settings||!Array.isArray(x.shifts))throw 0;S={settings:{target:+x.settings.target||0,fuel:+x.settings.fuel||0,eff:+x.settings.eff||1},shifts:x.shifts};save();selectedMonth=localMonth();render();alert("Backup restored successfully.")}catch(_){alert("Invalid backup")}};r.readAsText(file)}
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('./sw.js').catch(()=>{});
+save();
 render();
 </script></body></html>
