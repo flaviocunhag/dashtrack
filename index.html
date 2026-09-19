@@ -33,7 +33,7 @@ function loadState(){
   for(const k of keys){try{const raw=localStorage.getItem(k);if(!raw)continue;const x=JSON.parse(raw);if(x&&x.settings&&Array.isArray(x.shifts))return x}catch(e){}}
   return JSON.parse(JSON.stringify(DEFAULT));
 }
-let S=loadState(),page="dash",edit=null,selectedMonth=new Date().toISOString().slice(0,7),user=null,syncing=false;
+let S=loadState(),page="dash",edit=null,selectedMonth=new Date().toISOString().slice(0,7),user=null,syncing=false,autoSyncTimer=null,syncDebounceTimer=null;
 S.pendingUpserts=Array.isArray(S.pendingUpserts)?S.pendingUpserts:[];S.pendingDeletes=Array.isArray(S.pendingDeletes)?S.pendingDeletes:[];
 const $=id=>document.getElementById(id),save=()=>localStorage.setItem(K,JSON.stringify(S));
 const money=x=>"$"+(+x||0).toLocaleString("en-CA",{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -108,12 +108,31 @@ async function syncCloud(showAlert=false){
   }catch(e){console.error(e);if(showAlert)alert("Sync could not complete. Your local data is still safe. Check your internet connection and try again.");}
   finally{syncing=false;render()}
 }
+function scheduleAutoSync(delay=800){
+  if(!user||!navigator.onLine)return;
+  clearTimeout(syncDebounceTimer);
+  syncDebounceTimer=setTimeout(()=>syncCloud(false),delay);
+}
+function startAutoSync(){
+  clearInterval(autoSyncTimer);
+  if(!user)return;
+  scheduleAutoSync(250);
+  autoSyncTimer=setInterval(()=>{if(user&&navigator.onLine&&!document.hidden)syncCloud(false)},60000);
+}
+function stopAutoSync(){
+  clearInterval(autoSyncTimer);
+  autoSyncTimer=null;
+  clearTimeout(syncDebounceTimer);
+  syncDebounceTimer=null;
+}
+window.addEventListener("online",()=>{if(user)syncCloud(false)});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&user)syncCloud(false)});
 function shiftMonth(m){selectedMonth=m;page="dash";render()}
 function C(){let a=S.shifts.filter(s=>s.date?.slice(0,7)==month()),g=a.reduce((x,s)=>x+(+s.gross||0),0),d=a.reduce((x,s)=>x+(+s.del||0),0),dt=a.reduce((x,s)=>x+(+s.dash||0),0),at=a.reduce((x,s)=>x+(+s.active||0),0),km=a.reduce((x,s)=>x+(+s.km||0),0),f=a.reduce((x,s)=>x+fuel(s),0);return{a,g,d,dt,at,km,f,n:g-f,days:new Set(a.map(s=>s.date)).size}}
 function M(l,v,s=""){return`<div class=metric><div class=label>${l}</div><div class=value>${v}</div>${s?`<div class=sub>${s}</div>`:""}</div>`}
 function sec(t,id,body){return`<section class=section><div class=head onclick="tog('${id}')"><h2>${t}</h2><span class=chev>⌄</span></div><div id=${id} class=hidden>${body}</div></section>`}
 function tog(id){let e=$(id);e.classList.toggle("hidden");e.previousElementSibling.querySelector(".chev").textContent=e.classList.contains("hidden")?"⌄":"⌃"}
-function topActions(){return`<div class=top-actions><span class=small>${user?`<span class=syncdot></span>Cloud connected`:""}</span>${user?`<button class="btn ghost" onclick="syncCloud(true)">${syncing?"Syncing…":"Sync"}</button>`:""}</div>`}
+function topActions(){return`<div class=top-actions><span class=small>${user?`<span class="syncdot ${syncing?"off":""}"></span>${syncing?"Syncing…":"Cloud connected · Auto-sync"}`:""}</span>${user?`<button class="btn ghost" onclick="syncCloud(true)">${syncing?"Syncing…":"Sync"}</button>`:""}</div>`}
 function dash(){let c=C(),p=S.settings.target?Math.min(100,c.g/S.settings.target*100):0;let opts=monthList().map(m=>`<option value="${m}" ${m===selectedMonth?"selected":""}>${monthLabel(m)}</option>`).join("");
 let snap=`<div class=grid>${M("Gross total",money(c.g),c.a.length+" shifts in selected month")}${M("Total estimated net",money(c.n),"After fuel cost")}</div>`;
 let perf=`<div class=grid>${M("Gross per delivery",money(c.d?c.g/c.d:0))}${M("Net per delivery",money(c.d?c.n/c.d:0))}${M("Gross per Dash Time hour",money(c.dt?c.g/(c.dt/60):0))}${M("Net per Dash Time hour",money(c.dt?c.n/(c.dt/60):0))}${M("Gross per Active Time hour",money(c.at?c.g/(c.at/60):0))}${M("Net per Active Time hour",money(c.at?c.n/(c.at/60):0))}${M("Net per km",money(c.km?c.n/c.km:0))}${M("Average km per delivery",(c.d?c.km/c.d:0).toFixed(2)+" km")}</div>`;
@@ -127,21 +146,30 @@ function auth(){return`<div class=auth><div class=box><h1>DashTrack</h1><div cla
 function render(){if(page==="auth"){document.querySelector("#app").innerHTML=auth();return}let b=page==="dash"?dash():page==="history"?history():page==="settings"?settings():form();document.querySelector("#app").innerHTML=b+`<nav class=tabs><button class="tab ${page==="dash"?"active":""}" onclick="page='dash';render()">▦<br>Dashboard</button><button class="tab ${page==="history"?"active":""}" onclick="page='history';render()">◷<br>Shift History</button><button class="tab ${page==="settings"?"active":""}" onclick="page='settings';render()">⚙<br>Settings</button></nav>`}
 function add(){normalizeIds();edit=null;page="form";render()}
 function editShift(id){edit=id;page="form";render()}
-async function deleteShift(id){if(!confirm("Delete this shift?"))return;S.shifts=S.shifts.filter(x=>x.id!==id);queueDelete(id);save();render();await syncOneDelete(id);}
+async function deleteShift(id){if(!confirm("Delete this shift?"))return;S.shifts=S.shifts.filter(x=>x.id!==id);queueDelete(id);save();render();await syncOneDelete(id);scheduleAutoSync(150);}
 async function saveShift(){
   const dh=Math.max(0,Math.floor(+$('dashH').value||0)),dm=Math.min(59,Math.max(0,Math.floor(+$('dashM').value||0))),ah=Math.max(0,Math.floor(+$('activeH').value||0)),am=Math.min(59,Math.max(0,Math.floor(+$('activeM').value||0))),date=$('date').value,gross=+$('gross').value,del=+$('del').value,km=+$('km').value,dash=dh*60+dm,active=ah*60+am;
   if(!date)return alert("Enter a date.");if(!Number.isFinite(gross)||gross<0)return alert("Gross earnings must be 0 or greater.");if(!Number.isInteger(del)||del<0)return alert("Deliveries must be a whole number of 0 or greater.");if(active>dash)return alert("Active Time cannot be greater than Dash Time.");if(!Number.isFinite(km)||km<0)return alert("Distance must be 0 or greater.");
-  const id=edit||uuid(),s={id,date,gross,del,dash,active,km,note:$('note').value.trim()};if(edit){const i=S.shifts.findIndex(x=>x.id===edit);if(i>=0)S.shifts[i]=s;}else S.shifts.push(s);queueUpsert(id);save();edit=null;page="dash";selectedMonth=date.slice(0,7);render();await syncOneShift(id);
+  const id=edit||uuid(),s={id,date,gross,del,dash,active,km,note:$('note').value.trim()};if(edit){const i=S.shifts.findIndex(x=>x.id===edit);if(i>=0)S.shifts[i]=s;}else S.shifts.push(s);queueUpsert(id);save();edit=null;page="dash";selectedMonth=date.slice(0,7);render();await syncOneShift(id);scheduleAutoSync(150);
 }
-async function saveSet(){const target=+$('target').value,fuelPrice=+$('fuel').value,eff=+$('eff').value;if(!Number.isFinite(target)||target<0)return alert("Monthly target must be 0 or greater.");if(!Number.isFinite(fuelPrice)||fuelPrice<0)return alert("Gas price must be 0 or greater.");if(!Number.isFinite(eff)||eff<=0)return alert("Vehicle efficiency must be greater than 0.");S.settings={target,fuel:fuelPrice,eff};save();if(user){const {error}=await sb.from("settings").upsert({user_id:user.id,monthly_target:target,gas_price:fuelPrice,vehicle_efficiency:eff},{onConflict:"user_id"});if(error)alert("Settings saved locally, but cloud sync failed.");}render()}
+async function saveSet(){const target=+$('target').value,fuelPrice=+$('fuel').value,eff=+$('eff').value;if(!Number.isFinite(target)||target<0)return alert("Monthly target must be 0 or greater.");if(!Number.isFinite(fuelPrice)||fuelPrice<0)return alert("Gas price must be 0 or greater.");if(!Number.isFinite(eff)||eff<=0)return alert("Vehicle efficiency must be greater than 0.");S.settings={target,fuel:fuelPrice,eff};save();if(user){const {error}=await sb.from("settings").upsert({user_id:user.id,monthly_target:target,gas_price:fuelPrice,vehicle_efficiency:eff},{onConflict:"user_id"});if(error)alert("Settings saved locally, but cloud sync failed.");else scheduleAutoSync(200);}render()}
 function backup(){let a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(S,null,2)],{type:"application/json"}));a.download="dashtrack-backup.json";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
 function restore(e){let file=e.target.files?.[0];if(!file)return;let r=new FileReader();r.onload=async()=>{try{let x=JSON.parse(r.result);if(!x.settings||!Array.isArray(x.shifts))throw 0;S={settings:{target:+x.settings.target||0,fuel:+x.settings.fuel||0,eff:+x.settings.eff||1},shifts:x.shifts,pendingUpserts:[],pendingDeletes:[]};normalizeIds();save();selectedMonth=localMonth();render();if(user)await syncCloud(false);alert("Backup restored successfully.")}catch(_){alert("Invalid backup")}};r.readAsText(file)}
 async function signIn(){if(!sb)return $('authStatus').textContent="Cloud service unavailable. The app still works locally.";const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||!password)return $('authStatus').textContent="Enter your email and password.";$('authStatus').textContent="Signing in…";const {error}=await sb.auth.signInWithPassword({email,password});if(error)$('authStatus').textContent=error.message}
 async function signUp(){if(!sb)return $('authStatus').textContent="Cloud service unavailable. The app still works locally.";const email=$('authEmail').value.trim(),password=$('authPassword').value;if(!email||password.length<6)return $('authStatus').textContent="Enter an email and a password with at least 6 characters.";$('authStatus').textContent="Creating account…";const {data,error}=await sb.auth.signUp({email,password});if(error)return $('authStatus').textContent=error.message;if(data.session){user=data.user;page="dash";render();await syncCloud(false)}else $('authStatus').textContent="Account created. Check your email to confirm it, then sign in."}
 async function resendConfirmation(){if(!sb)return $('authStatus').textContent="Cloud service unavailable. The app still works locally.";const email=$('authEmail').value.trim();if(!email)return $('authStatus').textContent="Enter your email first.";$('authStatus').textContent="Sending confirmation email…";const {error}=await sb.auth.resend({type:"signup",email,options:{emailRedirectTo:window.location.origin+window.location.pathname}});if(error)return $('authStatus').textContent=error.message;$('authStatus').textContent="A new confirmation email was sent. Check your inbox."}
 async function logout(){if(sb)await sb.auth.signOut();user=null;render()}
-if(sb)sb.auth.onAuthStateChange((event,session)=>{user=session?.user||null;if(user&&page==="auth")page="dash";render();if(user)setTimeout(()=>syncCloud(false),0)});
-if(sb)sb.auth.getSession().then(({data})=>{user=data.session?.user||null;render();if(user)syncCloud(false);else render()}).catch(()=>render());
+if(sb)sb.auth.onAuthStateChange((event,session)=>{
+  user=session?.user||null;
+  if(user){if(page==="auth")page="dash";startAutoSync();}
+  else stopAutoSync();
+  render();
+});
+if(sb)sb.auth.getSession().then(({data})=>{
+  user=data.session?.user||null;
+  render();
+  if(user)startAutoSync();
+}).catch(()=>render());
 else render();
 if(!user)render();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('./sw.js').catch(()=>{});
