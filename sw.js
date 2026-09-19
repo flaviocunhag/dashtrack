@@ -1,4 +1,4 @@
-const C = 'dashtrack-v6';
+const C = 'dashtrack-v7';
 
 self.addEventListener('install', event => {
   event.waitUntil(
