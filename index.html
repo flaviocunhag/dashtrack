@@ -117,7 +117,7 @@ function startAutoSync(){
   clearInterval(autoSyncTimer);
   if(!user)return;
   scheduleAutoSync(250);
-  autoSyncTimer=setInterval(()=>{if(user&&navigator.onLine&&!document.hidden)syncCloud(false)},60000);
+  autoSyncTimer=setInterval(()=>{if(user&&navigator.onLine&&!document.hidden)syncCloud(false)},10000);
 }
 function stopAutoSync(){
   clearInterval(autoSyncTimer);
