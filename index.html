@@ -52,8 +52,30 @@ function queueUpsert(id){S.pendingUpserts=[...new Set([...S.pendingUpserts,id])]
 function queueDelete(id){S.pendingDeletes=[...new Set([...S.pendingDeletes,id])];S.pendingUpserts=S.pendingUpserts.filter(x=>x!==id)}
 function dbShift(s){return{id:s.id,user_id:user.id,shift_date:s.date,gross_earnings:+s.gross||0,deliveries:+s.del||0,dash_time_minutes:+s.dash||0,active_time_minutes:+s.active||0,distance_km:+s.km||0,observation:s.note||null}}
 function localShift(r){return{id:r.id,date:r.shift_date,gross:+r.gross_earnings||0,del:+r.deliveries||0,dash:+r.dash_time_minutes||0,active:+r.active_time_minutes||0,km:+r.distance_km||0,note:r.observation||""}}
-async function syncOneShift(id){if(!user)return;const s=S.shifts.find(x=>x.id===id);if(!s)return;const {error}=await sb.from("shifts").upsert(dbShift(s),{onConflict:"id"});if(!error){S.pendingUpserts=S.pendingUpserts.filter(x=>x!==id);save()}else{console.warn(error)}}
-async function syncOneDelete(id){if(!user)return;const {error}=await sb.from("shifts").delete().eq("id",id).eq("user_id",user.id);if(!error){S.pendingDeletes=S.pendingDeletes.filter(x=>x!==id);save()}else{console.warn(error)}}
+async function syncOneShift(id){
+  if(!user)return;
+  const s=S.shifts.find(x=>x.id===id);
+  if(!s)return;
+  const payload=dbShift(s);
+  const {data:existing,error:selectError}=await sb.from("shifts").select("id").eq("id",id).eq("user_id",user.id).maybeSingle();
+  if(selectError)throw selectError;
+  if(existing){
+    const {error:updateError}=await sb.from("shifts").update(payload).eq("id",id).eq("user_id",user.id);
+    if(updateError)throw updateError;
+  }else{
+    const {error:insertError}=await sb.from("shifts").insert(payload);
+    if(insertError)throw insertError;
+  }
+  S.pendingUpserts=S.pendingUpserts.filter(x=>x!==id);
+  save();
+}
+async function syncOneDelete(id){
+  if(!user)return;
+  const {error}=await sb.from("shifts").delete().eq("id",id).eq("user_id",user.id);
+  if(error)throw error;
+  S.pendingDeletes=S.pendingDeletes.filter(x=>x!==id);
+  save();
+}
 async function syncCloud(showAlert=false){
   if(!user||syncing)return;
   syncing=true;render();
@@ -63,8 +85,17 @@ async function syncCloud(showAlert=false){
     for(const id of [...S.pendingUpserts])await syncOneShift(id);
     const {data:cloud,error}=await sb.from("shifts").select("id,shift_date,gross_earnings,deliveries,dash_time_minutes,active_time_minutes,distance_km,observation").eq("user_id",user.id);
     if(error)throw error;
-    const localById=new Map(S.shifts.map(s=>[s.id,s]));
-    for(const r of (cloud||[])){if(!localById.has(r.id))S.shifts.push(localShift(r));}
+    const cloudById=new Map((cloud||[]).map(r=>[r.id,r]));
+    const localIds=new Set(S.shifts.map(s=>s.id));
+    for(const r of (cloud||[])){
+      if(localIds.has(r.id)){
+        const i=S.shifts.findIndex(s=>s.id===r.id);
+        if(i>=0)S.shifts[i]=localShift(r);
+      }else{
+        S.shifts.push(localShift(r));
+      }
+    }
+    S.pendingUpserts=[];
     const {data:settingsRow,error:se}=await sb.from("settings").select("monthly_target,gas_price,vehicle_efficiency").eq("user_id",user.id).maybeSingle();
     if(se)throw se;
     if(settingsRow){S.settings={target:+settingsRow.monthly_target,fuel:+settingsRow.gas_price,eff:+settingsRow.vehicle_efficiency};}
