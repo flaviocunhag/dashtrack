@@ -6,7 +6,7 @@
 <style>
 :root{--bg:#0b0b0c;--card:#232324;--text:#f5f5f7;--muted:#a6a6aa;--accent:#ff4b43;--green:#18c964;--line:#3a3a3c}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-.app{max-width:760px;margin:auto;padding:20px 15px 100px}header{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:20px}
+.app{max-width:760px;margin:auto;padding:calc(20px + env(safe-area-inset-top)) 15px calc(100px + env(safe-area-inset-bottom))}header{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:20px}
 h1{font-size:31px;margin:0}h2{font-size:21px;margin:0}.muted{color:var(--muted)}button,input,textarea,select{font:inherit}
 .btn{border:0;border-radius:14px;padding:12px 16px;background:var(--accent);color:white;font-weight:700}.secondary{background:#303033}.ghost{background:transparent;border:1px solid var(--line)}
 .card,.metric{background:var(--card);border:1px solid #343436;border-radius:17px;padding:17px;margin-bottom:13px}
@@ -16,10 +16,10 @@ h1{font-size:31px;margin:0}h2{font-size:21px;margin:0}.muted{color:var(--muted)}
 .shift{display:flex;justify-content:space-between;gap:10px}.date{font-weight:800}.meta{color:var(--muted);margin-top:5px}.net{color:var(--green);font-weight:800;white-space:nowrap}
 .form{margin-top:10px}.field{margin-bottom:13px}.field label{display:block;color:var(--muted);font-size:14px;margin-bottom:6px}
 input,textarea,select{width:100%;background:#171718;color:var(--text);border:1px solid var(--line);border-radius:11px;padding:11px}.row{display:grid;grid-template-columns:1fr 1fr;gap:11px}
-.tabs{position:fixed;z-index:10;bottom:12px;left:50%;transform:translateX(-50%);width:min(96%,500px);display:flex;background:#252527;border:1px solid #404043;border-radius:25px;padding:5px;box-shadow:0 8px 28px #0008}
+.tabs{position:fixed;z-index:10;bottom:calc(12px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);width:min(96%,500px);display:flex;background:#252527;border:1px solid #404043;border-radius:25px;padding:5px;box-shadow:0 8px 28px #0008}
 .tab{flex:1;background:none;border:0;color:#aaa;padding:9px 5px;border-radius:20px;font-weight:700}.tab.active{background:#67312e;color:#ff655e}.hidden{display:none!important}
 .auth{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px}.auth .box{width:min(100%,440px)}.auth h1{margin-bottom:7px}.auth .card{margin-top:20px}.status{font-size:13px;color:var(--muted);margin-top:8px}.syncdot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px}.syncdot.off{background:#777}.top-actions{display:flex;align-items:center;gap:8px}.small{font-size:12px}
-@media(max-width:520px){.grid,.row{grid-template-columns:1fr}.app{padding-left:13px;padding-right:13px}h1{font-size:29px}.top-actions{flex-wrap:wrap;justify-content:flex-end}}
+@media(max-width:520px){.grid,.row{grid-template-columns:1fr}.app{padding-left:13px;padding-right:13px;padding-top:calc(20px + env(safe-area-inset-top));padding-bottom:calc(100px + env(safe-area-inset-bottom))}h1{font-size:29px}.top-actions{flex-wrap:wrap;justify-content:flex-end}}
 </style></head><body><main id="app" class="app"></main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -106,25 +106,18 @@ async function syncCloud(showAlert=false){
     save();
     if(showAlert)alert("Cloud sync completed.");
   }catch(e){console.error(e);if(showAlert)alert("Sync could not complete. Your local data is still safe. Check your internet connection and try again.");}
-  finally{
-    syncing=false;
-    // Never re-render the shift form while the user is typing.
-    // Auto-sync must not erase unsaved form values.
-    if(page!=="form")render();
-  }
+  finally{syncing=false;render()}
 }
 function scheduleAutoSync(delay=800){
-  if(!user||!navigator.onLine||page==="form")return;
+  if(!user||!navigator.onLine)return;
   clearTimeout(syncDebounceTimer);
-  syncDebounceTimer=setTimeout(()=>{if(page!=="form")syncCloud(false)},delay);
+  syncDebounceTimer=setTimeout(()=>syncCloud(false),delay);
 }
 function startAutoSync(){
   clearInterval(autoSyncTimer);
   if(!user)return;
-  if(page!=="form")scheduleAutoSync(250);
-  autoSyncTimer=setInterval(()=>{
-    if(user&&navigator.onLine&&!document.hidden&&page!=="form")syncCloud(false)
-  },10000);
+  scheduleAutoSync(250);
+  autoSyncTimer=setInterval(()=>{if(user&&navigator.onLine&&!document.hidden)syncCloud(false)},10000);
 }
 function stopAutoSync(){
   clearInterval(autoSyncTimer);
@@ -132,8 +125,8 @@ function stopAutoSync(){
   clearTimeout(syncDebounceTimer);
   syncDebounceTimer=null;
 }
-window.addEventListener("online",()=>{if(user&&page!=="form")syncCloud(false)});
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&user&&page!=="form")syncCloud(false)});
+window.addEventListener("online",()=>{if(user)syncCloud(false)});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&user)syncCloud(false)});
 function shiftMonth(m){selectedMonth=m;page="dash";render()}
 function C(){let a=S.shifts.filter(s=>s.date?.slice(0,7)==month()),g=a.reduce((x,s)=>x+(+s.gross||0),0),d=a.reduce((x,s)=>x+(+s.del||0),0),dt=a.reduce((x,s)=>x+(+s.dash||0),0),at=a.reduce((x,s)=>x+(+s.active||0),0),km=a.reduce((x,s)=>x+(+s.km||0),0),f=a.reduce((x,s)=>x+fuel(s),0);return{a,g,d,dt,at,km,f,n:g-f,days:new Set(a.map(s=>s.date)).size}}
 function M(l,v,s=""){return`<div class=metric><div class=label>${l}</div><div class=value>${v}</div>${s?`<div class=sub>${s}</div>`:""}</div>`}
