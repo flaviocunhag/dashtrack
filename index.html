@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0b0b0c"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="manifest" href="./manifest.webmanifest"><link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png"><link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png">
+<meta name="theme-color" content="#0b0b0c"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><link rel="manifest" href="./manifest.webmanifest">
 <title>DashTrack</title>
 <style>
 :root{--bg:#0b0b0c;--card:#232324;--text:#f5f5f7;--muted:#a6a6aa;--accent:#ff4b43;--green:#18c964;--line:#3a3a3c}
@@ -106,18 +106,25 @@ async function syncCloud(showAlert=false){
     save();
     if(showAlert)alert("Cloud sync completed.");
   }catch(e){console.error(e);if(showAlert)alert("Sync could not complete. Your local data is still safe. Check your internet connection and try again.");}
-  finally{syncing=false;render()}
+  finally{
+    syncing=false;
+    // Never re-render the shift form while the user is typing.
+    // Auto-sync must not erase unsaved form values.
+    if(page!=="form")render();
+  }
 }
 function scheduleAutoSync(delay=800){
-  if(!user||!navigator.onLine)return;
+  if(!user||!navigator.onLine||page==="form")return;
   clearTimeout(syncDebounceTimer);
-  syncDebounceTimer=setTimeout(()=>syncCloud(false),delay);
+  syncDebounceTimer=setTimeout(()=>{if(page!=="form")syncCloud(false)},delay);
 }
 function startAutoSync(){
   clearInterval(autoSyncTimer);
   if(!user)return;
-  scheduleAutoSync(250);
-  autoSyncTimer=setInterval(()=>{if(user&&navigator.onLine&&!document.hidden)syncCloud(false)},10000);
+  if(page!=="form")scheduleAutoSync(250);
+  autoSyncTimer=setInterval(()=>{
+    if(user&&navigator.onLine&&!document.hidden&&page!=="form")syncCloud(false)
+  },10000);
 }
 function stopAutoSync(){
   clearInterval(autoSyncTimer);
@@ -125,8 +132,8 @@ function stopAutoSync(){
   clearTimeout(syncDebounceTimer);
   syncDebounceTimer=null;
 }
-window.addEventListener("online",()=>{if(user)syncCloud(false)});
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&user)syncCloud(false)});
+window.addEventListener("online",()=>{if(user&&page!=="form")syncCloud(false)});
+document.addEventListener("visibilitychange",()=>{if(!document.hidden&&user&&page!=="form")syncCloud(false)});
 function shiftMonth(m){selectedMonth=m;page="dash";render()}
 function C(){let a=S.shifts.filter(s=>s.date?.slice(0,7)==month()),g=a.reduce((x,s)=>x+(+s.gross||0),0),d=a.reduce((x,s)=>x+(+s.del||0),0),dt=a.reduce((x,s)=>x+(+s.dash||0),0),at=a.reduce((x,s)=>x+(+s.active||0),0),km=a.reduce((x,s)=>x+(+s.km||0),0),f=a.reduce((x,s)=>x+fuel(s),0);return{a,g,d,dt,at,km,f,n:g-f,days:new Set(a.map(s=>s.date)).size}}
 function M(l,v,s=""){return`<div class=metric><div class=label>${l}</div><div class=value>${v}</div>${s?`<div class=sub>${s}</div>`:""}</div>`}
