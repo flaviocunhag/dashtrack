@@ -76,9 +76,9 @@ async function syncOneDelete(id){
   S.pendingDeletes=S.pendingDeletes.filter(x=>x!==id);
   save();
 }
-async function syncCloud(showAlert=false){
+async function syncCloud(showAlert=false,rerender=true){
   if(!user||syncing)return;
-  syncing=true;render();
+  syncing=true;if(rerender)render();
   try{
     normalizeIds();
     for(const id of [...S.pendingDeletes])await syncOneDelete(id);
@@ -106,15 +106,13 @@ async function syncCloud(showAlert=false){
     save();
     if(showAlert)alert("Cloud sync completed.");
   }catch(e){console.error(e);if(showAlert)alert("Sync could not complete. Your local data is still safe. Check your internet connection and try again.");}
-  finally{syncing=false;render()}
+  finally{syncing=false;if(rerender)render()}
 }
-function navigate(nextPage){
+async function navigate(nextPage){
   page=nextPage;
+  if(user)await syncCloud(false,false);
   render();
-  if(user)syncCloud(false);
 }
-window.addEventListener("online",()=>{if(user)syncCloud(false)});
-document.addEventListener("visibilitychange",()=>{if(!document.hidden&&user)syncCloud(false)});
 function shiftMonth(m){selectedMonth=m;page="dash";render()}
 function C(){let a=S.shifts.filter(s=>s.date?.slice(0,7)==month()),g=a.reduce((x,s)=>x+(+s.gross||0),0),d=a.reduce((x,s)=>x+(+s.del||0),0),dt=a.reduce((x,s)=>x+(+s.dash||0),0),at=a.reduce((x,s)=>x+(+s.active||0),0),km=a.reduce((x,s)=>x+(+s.km||0),0),f=a.reduce((x,s)=>x+fuel(s),0);return{a,g,d,dt,at,km,f,n:g-f,days:new Set(a.map(s=>s.date)).size}}
 function M(l,v,s=""){return`<div class=metric><div class=label>${l}</div><div class=value>${v}</div>${s?`<div class=sub>${s}</div>`:""}</div>`}
